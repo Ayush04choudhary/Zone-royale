@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Zone Royale</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zone Royale">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0b0d10;
+    overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #e8e8e8;
+  }
+  #game-wrap {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #1a2015;
+    display: block;
+    cursor: crosshair;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6);
+  }
+  #hud {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 14px 18px;
+    pointer-events: none;
+    font-size: 14px;
+    z-index: 5;
+  }
+  #hud .panel {
+    background: rgba(10,12,14,0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    backdrop-filter: blur(3px);
+  }
+  #healthBarOuter {
+    width: 160px; height: 14px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 7px;
+    overflow: hidden;
+    margin-top: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  #healthBarInner {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #ff4d4d, #ff9f43);
+    transition: width 0.15s ease;
+  }
+  #ammoText { margin-top: 6px; font-weight: 600; letter-spacing: 0.5px; }
+  #aliveCount { font-size: 22px; font-weight: 700; color: #ffcf5c; text-shadow: 0 0 8px rgba(255,207,92,0.4); }
+  #zoneWarning {
+    font-size: 12px; color: #ff6b6b; margin-top: 4px; font-weight: 600;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  #centerMsg {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #centerMsg h1 {
+    font-size: 52px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 20px rgba(0,0,0,0.8);
+  }
+  #centerMsg p { font-size: 16px; margin-top: 10px; color: #ccc; }
+  .win { color: #6dff8f; }
+  .lose { color: #ff5c5c; }
+  #startOverlay, #endOverlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5,6,8,0.9);
+    z-index: 20;
+    text-align: center;
+    gap: 16px;
+  }
+  #endOverlay { display: none; }
+  #startOverlay h1, #endOverlay h1 {
+    font-size: 42px;
+    letter-spacing: 4px;
+    background: linear-gradient(90deg, #ffcf5c, #ff8a5c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  #startOverlay p, #endOverlay p { color: #aaa; max-width: 420px; line-height: 1.5; font-size: 14px; }
+  button.playBtn {
+    margin-top: 10px;
+    padding: 12px 34px;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #ffcf5c, #ff8a5c);
+    border: none;
+    border-radius: 30px;
+    color: #1a1a1a;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  button.playBtn:hover { transform: scale(1.05); }
+  .controlsRow {
+    display: flex; gap: 18px; margin-top: 6px;
+    font-size: 13px; color: #999;
+  }
+  .controlsRow span b { color: #ffcf5c; }
+  #minimap {
+    position: absolute; bottom: 16px; right: 16px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    background: rgba(10,12,14,0.6);
+    z-index: 5;
+  }
+  #killfeed {
+    position: absolute; top: 70px; right: 18px;
+    display: flex; flex-direction: column; gap: 4px;
+    align-items: flex-end;
+    z-index: 5;
+  }
+  .killMsg {
+    font-size: 12px;
+    background: rgba(10,12,14,0.6);
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: #ddd;
+    animation: fadeOut 4s forwards;
+  }
+  @keyframes fadeOut {
+    0% { opacity: 1; }
+    75% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="game-wrap">
+  <canvas id="game" width="900" height="600"></canvas>
+  <canvas id="minimap" width="140" height="140"></canvas>
+
+  <div id="hud">
+    <div class="panel">
+      <div id="aliveCount">— alive</div>
+      <div id="healthBarOuter"><div id="healthBarInner"></div></div>
+      <div id="ammoText">Ammo: —</div>
+    </div>
+    <div class="panel" style="text-align:right;">
+      <div>Zone shrinking in <span id="zoneTimer">--</span>s</div>
+      <div id="zoneWarning">⚠ OUTSIDE THE SAFE ZONE</div>
+    </div>
+  </div>
+
+  <div id="killfeed"></div>
+
+  <div id="startOverlay">
+    <h1>ZONE ROYALE</h1>
+    <p>Drop into a shrinking arena with 9 other fighters. Loot weapons, dodge the storm, and be the last one standing.</p>
+    <div class="controlsRow">
+      <span><b>WASD</b> move</span>
+      <span><b>Mouse</b> aim</span>
+      <span><b>Click</b> shoot</span>
+      <span><b>R</b> reload</span>
+    </div>
+    <button class="playBtn" id="startBtn">DROP IN</button>
+  </div>
+
+  <div id="endOverlay">
+    <h1 id="endTitle">—</h1>
+    <p id="endSub"></p>
+    <button class="playBtn" id="restartBtn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<script>
+(function(){
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const WORLD = 1800; // world is bigger than viewport, camera follows player
+
+let keys = {};
+let mouse = {x:W/2, y:H/2, down:false};
+let running = false;
+let gameOver = false;
+let frame = 0;
+
+const startOverlay = document.getElementById('startOverlay');
+const endOverlay = document.getElementById('endOverlay');
+const endTitle = document.getElementById('endTitle');
+const endSub = document.getElementById('endSub');
+const aliveCountEl = document.getElementById('aliveCount');
+const healthBarInner = document.getElementById('healthBarInner');
+const ammoText = document.getElementById('ammoText');
+const zoneTimerEl = document.getElementById('zoneTimer');
+const zoneWarningEl = document.getElementById('zoneWarning');
+const killfeed = document.getElementById('killfeed');
+
+function addKillMsg(text){
+  const d = document.createElement('div');
+  d.className = 'killMsg';
+  d.textContent = text;
+  killfeed.appendChild(d);
+  setTimeout(()=> d.remove(), 4000);
+  while (killfeed.children.length > 5) killfeed.removeChild(killfeed.firstChild);
+}
+
+// ---------- Entities ----------
+function makePlayer(x, y, isBot, name, color){
+  return {
+    x, y, vx:0, vy:0,
+    r: 14,
+    hp: 100, maxHp: 100,
+    ammo: 12, maxAmmo: 12, reloading:false, reloadTimer:0,
+    angle: 0,
+    speed: 2.6,
+    alive: true,
+    isBot, name, color,
+    fireCooldown: 0,
+    botState: { targetAngleJitter:0, retarget:0, dir: Math.random()*Math.PI*2, strafeTimer: 0, aggro:false },
+    lastFireTime: -999,
+    kills: 0,
+    itemBoost: 1
+  };
+}
+
+let player, bots = [], bullets = [], pickups = [], particles = [];
+let zone = { x: WORLD/2, y: WORLD/2, r: WORLD*0.62, targetR: WORLD*0.62, shrinkTimer: 12, phase:0 };
+const ZONE_MIN_TIMER = 8;
+let camera = {x:0,y:0};
+
+const botNames = ["Vex","Ronin","Kilo","Byte","Nova","Suki","Rig","Ash","Draco","Puma"];
+const colors = ["#ff6b6b","#6bd1ff","#ffcf5c","#a586ff","#7dff9c","#ff9ecb","#ffa45c","#5cffe0","#ff5c8a","#c4ff5c"];
+
+function resetGame(){
+  bullets = []; pickups = []; particles = []; bots = [];
+  gameOver = false;
+  zone = { x: WORLD/2, y: WORLD/2, r: WORLD*0.62, targetR: WORLD*0.35, shrinkTimer: 14, phase:0 };
+
+  const px = WORLD/2 + (Math.random()-0.5)*400;
+  const py = WORLD/2 + (Math.random()-0.5)*400;
+  player = makePlayer(px, py, false, "YOU", "#ffcf5c");
+
+  for (let i=0;i<9;i++){
+    const ang = (i/9)*Math.PI*2;
+    const dist = 500 + Math.random()*300;
+    const bx = WORLD/2 + Math.cos(ang)*dist;
+    const by = WORLD/2 + Math.sin(ang)*dist;
+    bots.push(makePlayer(bx, by, true, botNames[i], colors[i]));
+  }
+
+  // scatter pickups
+  for (let i=0;i<26;i++){
+    pickups.push({
+      x: Math.random()*WORLD,
+      y: Math.random()*WORLD,
+      type: Math.random() < 0.6 ? 'ammo' : 'health',
+      taken:false
+    });
+  }
+}
+
+// ---------- Input ----------
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase()==='r') tryReload(player); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
+
+function tryReload(p){
+  if (p.reloading || p.ammo === p.maxAmmo) return;
+  p.reloading = true;
+  p.reloadTimer = 70;
+}
+
+// ---------- Helpers ----------
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+function spawnBullet(owner, angle){
+  bullets.push({
+    x: owner.x + Math.cos(angle)*owner.r,
+    y: owner.y + Math.sin(angle)*owner.r,
+    vx: Math.cos(angle)*9,
+    vy: Math.sin(angle)*9,
+    owner,
+    life: 70
+  });
+}
+
+function fire(p, angle){
+  if (p.reloading || p.ammo <= 0 || !p.alive) return;
+  if (p.fireCooldown > 0) return;
+  p.ammo--;
+  p.fireCooldown = 14;
+  const spread = (Math.random()-0.5) * (p.isBot ? 0.10 : 0.05);
+  spawnBullet(p, angle + spread);
+  if (p.ammo === 0) tryReload(p);
+}
+
+function damagePlayer(target, dmg, sourceName){
+  if (!target.alive) return;
+  target.hp -= dmg;
+  spawnHitParticles(target.x, target.y);
+  if (target.hp <= 0){
+    target.alive = false;
+    target.hp = 0;
+    addKillMsg(`${sourceName} eliminated ${target.name}`);
+  }
+}
+
+function spawnHitParticles(x,y){
+  for (let i=0;i<6;i++){
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*4,
+      vy: (Math.random()-0.5)*4,
+      life: 20,
+      color: '#ff6b6b'
+    });
+  }
+}
+
+// ---------- Update ----------
+function updatePlayer(){
+  if (!player.alive) return;
+  let dx=0, dy=0;
+  if (keys['w']) dy -= 1;
+  if (keys['s']) dy += 1;
+  if (keys['a']) dx -= 1;
+  if (keys['d']) dx += 1;
+  const len = Math.hypot(dx,dy) || 1;
+  player.x += (dx/len) * player.speed;
+  player.y += (dy/len) * player.speed;
+  player.x = clamp(player.x, player.r, WORLD-player.r);
+  player.y = clamp(player.y, player.r, WORLD-player.r);
+
+  const worldMouseX = player.x + (mouse.x - W/2);
+  const worldMouseY = player.y + (mouse.y - H/2);
+  player.angle = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+
+  if (player.fireCooldown > 0) player.fireCooldown--;
+  if (player.reloading){
+    player.reloadTimer--;
+    if (player.reloadTimer <= 0){ player.reloading = false; player.ammo = player.maxAmmo; }
+  }
+  if (mouse.down) fire(player, player.angle);
+
+  // zone damage
+  if (dist(player, zone) > zone.r){
+    damagePlayer(player, 0.18, "The Zone");
+  }
+
+  // pickups
+  for (const pk of pickups){
+    if (pk.taken) continue;
+    if (dist(player, pk) < 22){
+      pk.taken = true;
+      if (pk.type === 'ammo'){ player.ammo = player.maxAmmo; addKillMsg("You grabbed ammo"); }
+      else { player.hp = clamp(player.hp+35, 0, player.maxHp); addKillMsg("You grabbed a med-kit"); }
+    }
+  }
+}
+
+function updateBot(b){
+  if (!b.alive) return;
+  const st = b.botState;
+
+  // find nearest visible target (player or other bot)
+  let allTargets = [player, ...bots].filter(t => t !== b && t.alive);
+  let nearest = null, nd = Infinity;
+  for (const t of allTargets){
+    const d = dist(b,t);
+    if (d < nd){ nd = d; nearest = t; }
+  }
+
+  const inZone = dist(b, zone) <= zone.r;
+
+  if (nearest && nd < 420){
+    st.aggro = true;
+    b.angle = Math.atan2(nearest.y-b.y, nearest.x-b.x);
+    // strafe while shooting
+    st.strafeTimer--;
+    if (st.strafeTimer <= 0){ st.dir = Math.random() < 0.5 ? 1 : -1; st.strafeTimer = 40+Math.random()*40; }
+    const perp = b.angle + Math.PI/2;
+    let mx = Math.cos(perp)*st.dir;
+    let my = Math.sin(perp)*st.dir;
+    // move slightly toward if far, away if too close
+    if (nd > 260){ mx += Math.cos(b.angle)*0.6; my += Math.sin(b.angle)*0.6; }
+    else if (nd < 120){ mx -= Math.cos(b.angle)*0.6; my -= Math.sin(b.angle)*0.6; }
+    const mlen = Math.hypot(mx,my)||1;
+    b.x += (mx/mlen)*b.speed*0.85;
+    b.y += (my/mlen)*b.speed*0.85;
+
+    if (b.fireCooldown > 0) b.fireCooldown--;
+    if (!b.reloading && b.ammo > 0 && nd < 380 && Math.random() < 0.045){
+      fire(b, b.angle);
+    }
+  } else {
+    st.aggro = false;
+    // wander, but bias toward zone center if outside
+    st.retarget--;
+    if (st.retarget <= 0 || !inZone){
+      if (!inZone){
+        st.dir = Math.atan2(zone.y-b.y, zone.x-b.x) + (Math.random()-0.5)*0.6;
+      } else {
+        st.dir = Math.random()*Math.PI*2;
+      }
+      st.retarget = 60 + Math.random()*80;
+    }
+    b.angle = st.dir;
+    b.x += Math.cos(st.dir)*b.speed*0.5;
+    b.y += Math.sin(st.dir)*b.speed*0.5;
+  }
+
+  b.x = clamp(b.x, b.r, WORLD-b.r);
+  b.y = clamp(b.y, b.r, WORLD-b.r);
+
+  if (b.reloading){
+    b.reloadTimer--;
+    if (b.reloadTimer <= 0){ b.reloading = false; b.ammo = b.maxAmmo; }
+  }
+  if (!b.reloading && b.ammo <= 2 && Math.random() < 0.01) tryReload(b);
+
+  if (!inZone){
+    damagePlayer(b, 0.18, "The Zone");
+  }
+
+  // bot pickup logic (simple: grab if very close)
+  for (const pk of pickups){
+    if (pk.taken) continue;
+    if (dist(b, pk) < 20){
+      pk.taken = true;
+      if (pk.type === 'ammo') b.ammo = b.maxAmmo;
+      else b.hp = clamp(b.hp+35, 0, b.maxHp);
+    }
+  }
+}
+
+function updateBullets(){
+  const allAlive = [player, ...bots].filter(p=>p.alive);
+  for (const bl of bullets){
+    bl.x += bl.vx; bl.y += bl.vy; bl.life--;
+    for (const target of allAlive){
+      if (target === bl.owner) continue;
+      if (dist(bl,target) < target.r){
+        damagePlayer(target, 14, bl.owner.name);
+        bl.life = 0;
+        break;
+      }
+    }
+  }
+  bullets = bullets.filter(b => b.life > 0 && b.x>-50 && b.y>-50 && b.x<WORLD+50 && b.y<WORLD+50);
+}
+
+function updateParticles(){
+  for (const p of particles){ p.x+=p.vx; p.y+=p.vy; p.life--; }
+  particles = particles.filter(p=>p.life>0);
+}
+
+function updateZone(){
+  zone.shrinkTimer -= 1/60;
+  if (zone.shrinkTimer <= 0){
+    zone.phase++;
+    zone.r = zone.targetR;
+    zone.targetR = Math.max(90, zone.targetR * 0.55);
+    zone.x += (Math.random()-0.5) * zone.r * 0.3;
+    zone.y += (Math.random()-0.5) * zone.r * 0.3;
+    zone.x = clamp(zone.x, zone.r*0.3, WORLD-zone.r*0.3);
+    zone.y = clamp(zone.y, zone.r*0.3, WORLD-zone.r*0.3);
+    zone.shrinkTimer = Math.max(ZONE_MIN_TIMER, 16 - zone.phase);
+  } else {
+    // smooth shrink over the last 3 seconds of the timer window is skipped for simplicity;
+    // instead shrink gradually each frame toward targetR once timer under threshold
+  }
+  // gradual shrink each frame for smoothness
+  if (zone.r > zone.targetR){
+    zone.r -= (zone.r - zone.targetR) * 0.01;
+  }
+}
+
+function checkGameOver(){
+  const aliveBots = bots.filter(b=>b.alive).length;
+  if (!player.alive){
+    endGame(false, aliveBots);
+    return true;
+  }
+  if (aliveBots === 0){
+    endGame(true, 0);
+    return true;
+  }
+  return false;
+}
+
+function endGame(won, aliveBots){
+  gameOver = true;
+  running = false;
+  endOverlay.style.display = 'flex';
+  if (won){
+    endTitle.textContent = "VICTORY ROYALE";
+    endTitle.className = 'win';
+    endSub.textContent = "You outlasted every other fighter in the zone.";
+  } else {
+    endTitle.textContent = "ELIMINATED";
+    endTitle.className = 'lose';
+    endSub.textContent = `You went down with ${aliveBots} fighter(s) still standing.`;
+  }
+}
+
+// ---------- Draw ----------
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  camera.x = clamp(player.x - W/2, 0, WORLD-W);
+  camera.y = clamp(player.y - H/2, 0, WORLD-H);
+
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+
+  // ground
+  ctx.fillStyle = '#1c2417';
+  ctx.fillRect(0,0,WORLD,WORLD);
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  for (let gx=0; gx<WORLD; gx+=60){
+    ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,WORLD); ctx.stroke();
+  }
+  for (let gy=0; gy<WORLD; gy+=60){
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(WORLD,gy); ctx.stroke();
+  }
+
+  // storm (outside zone)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0,0,WORLD,WORLD);
+  ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI*2, true);
+  ctx.fillStyle = 'rgba(140,40,200,0.28)';
+  ctx.fill('evenodd');
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(zone.x, zone.y, zone.r, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(200,120,255,0.8)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // pickups
+  for (const pk of pickups){
+    if (pk.taken) continue;
+    ctx.beginPath();
+    ctx.fillStyle = pk.type === 'ammo' ? '#6bd1ff' : '#7dff9c';
+    ctx.arc(pk.x, pk.y, 7, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(pk.type === 'ammo' ? 'A' : '+', pk.x, pk.y+3);
+  }
+
+  // particles
+  for (const p of particles){
+    ctx.globalAlpha = p.life/20;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,3,0,Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // bullets
+  ctx.fillStyle = '#ffe08a';
+  for (const b of bullets){
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // entities
+  const allEnts = [...bots, player];
+  for (const e of allEnts){
+    if (!e.alive) continue;
+    // direction indicator
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.angle);
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(0,0,e.r,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(e.r-3, -3, 10, 6);
+    ctx.restore();
+
+    // name + hp bar
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(e.name, e.x, e.y - e.r - 14);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(e.x-16, e.y-e.r-10, 32, 4);
+    ctx.fillStyle = e === player ? '#ffcf5c' : '#ff6b6b';
+    ctx.fillRect(e.x-16, e.y-e.r-10, 32*(e.hp/e.maxHp), 4);
+  }
+
+  ctx.restore();
+
+  // minimap
+  mctx.clearRect(0,0,140,140);
+  const scale = 140/WORLD;
+  mctx.fillStyle = 'rgba(140,40,200,0.25)';
+  mctx.fillRect(0,0,140,140);
+  mctx.beginPath();
+  mctx.arc(zone.x*scale, zone.y*scale, zone.r*scale, 0, Math.PI*2);
+  mctx.fillStyle = 'rgba(30,20,15,0.9)';
+  mctx.fill();
+  mctx.strokeStyle = 'rgba(200,120,255,0.8)';
+  mctx.stroke();
+  for (const b of bots){
+    if (!b.alive) continue;
+    mctx.fillStyle = '#ff6b6b';
+    mctx.beginPath(); mctx.arc(b.x*scale, b.y*scale, 2.5, 0, Math.PI*2); mctx.fill();
+  }
+  if (player.alive){
+    mctx.fillStyle = '#ffcf5c';
+    mctx.beginPath(); mctx.arc(player.x*scale, player.y*scale, 3.5, 0, Math.PI*2); mctx.fill();
+  }
+}
+
+function updateHUD(){
+  const aliveBots = bots.filter(b=>b.alive).length;
+  aliveCountEl.textContent = `${aliveBots + (player.alive?1:0)} alive`;
+  healthBarInner.style.width = clamp(player.hp,0,100) + '%';
+  ammoText.textContent = player.reloading ? 'Reloading...' : `Ammo: ${player.ammo}/${player.maxAmmo}`;
+  zoneTimerEl.textContent = Math.max(0, Math.ceil(zone.shrinkTimer));
+  const outside = dist(player, zone) > zone.r;
+  zoneWarningEl.style.opacity = outside ? '1' : '0';
+}
+
+// ---------- Loop ----------
+function loop(){
+  if (running && !gameOver){
+    frame++;
+    updatePlayer();
+    for (const b of bots) updateBot(b);
+    updateBullets();
+    updateParticles();
+    updateZone();
+    updateHUD();
+    if (checkGameOver()){ draw(); requestAnimationFrame(loop); return; }
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  resetGame();
+  startOverlay.style.display = 'none';
+  running = true;
+});
+document.getElementById('restartBtn').addEventListener('click', () => {
+  resetGame();
+  endOverlay.style.display = 'none';
+  running = true;
+});
+
+resetGame();
+draw();
+requestAnimationFrame(loop);
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => {
+      console.log('Service worker registration failed (this is fine if opened as a local file):', err);
+    });
+  });
+}
+</script>
+</body>
+</html>

@@ -894,7 +894,19 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+ <script>
+(function(){
+  var isSmall = window.innerWidth <= 1024 || window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isSmall) {
+    document.body.classList.add('touch-mode');
+    var d = document.getElementById('desktopControls');
+    var m = document.getElementById('mobileControls');
+    if (d) d.style.display = 'none';
+    if (m) m.style.display = 'flex';
+  }
+})(); 
+</script>
 </body>
 </html>
-  // bot pickup logic (simple: grab if very close)
+  
   
